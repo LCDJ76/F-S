@@ -6,5 +6,5 @@ import react from '@vitejs/plugin-react'
 // Si ton repo s'appelle <ton-user>.github.io (site "racine"), mets base: '/'
 export default defineConfig({
   plugins: [react()],
-  base: '/lcdj-stock-app/',
+  base: '/F-S/',
 })
