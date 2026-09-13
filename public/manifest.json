@@ -1,0 +1,9 @@
+{
+  "name": "LCDJ Stock — Facility Serv",
+  "short_name": "LCDJ Stock",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#F5F3EE",
+  "theme_color": "#004A05",
+  "icons": []
+}
