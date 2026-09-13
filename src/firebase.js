@@ -9,7 +9,7 @@ import { getFirestore } from 'firebase/firestore'
 const firebaseConfig = {
   apiKey: "AIzaSyDbubd9FfQvyzz66AEkqNUpnR3FGN6uh9c",
   authDomain: "lcdj-fs.firebaseapp.com",
-  projectId: "lcdj-fs",,
+  projectId: "lcdj-fs",
   storageBucket: "lcdj-fs.firebasestorage.app",
   messagingSenderId: "1002210519470",
   appId: "1:1002210519470:web:eb5846895ccc54a676803f",
