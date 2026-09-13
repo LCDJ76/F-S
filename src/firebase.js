@@ -7,12 +7,12 @@ import { getFirestore } from 'firebase/firestore'
 // une fois déployé) — la vraie sécurité vient des règles Firestore + Auth,
 // pas de cacher ces valeurs.
 const firebaseConfig = {
-  apiKey: "REMPLACE_MOI",
-  authDomain: "REMPLACE_MOI.firebaseapp.com",
-  projectId: "REMPLACE_MOI",
-  storageBucket: "REMPLACE_MOI.appspot.com",
-  messagingSenderId: "REMPLACE_MOI",
-  appId: "REMPLACE_MOI",
+  apiKey: "AIzaSyDbubd9FfQvyzz66AEkqNUpnR3FGN6uh9c",
+  authDomain: "lcdj-fs.firebaseapp.com",
+  projectId: "lcdj-fs",
+  storageBucket: "lcdj-fs.firebasestorage.app",
+  messagingSenderId: "1002210519470",
+  appId: "1:1002210519470:web:eb5846895ccc54a676803f",
 }
 
 export const app = initializeApp(firebaseConfig)
