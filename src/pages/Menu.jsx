@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
-import { listenProduits, ajouterProduit, setProduitActif, setProduitPrix } from '../data'
+import { listenProduits, ajouterProduit, setProduitActif, setProduitPrix, reinitialiserTout } from '../data'
 
 export default function Menu() {
   const [produits, setProduits] = useState([])
   const [nom, setNom] = useState('')
   const [categorie, setCategorie] = useState('')
   const [prix, setPrix] = useState('')
+  const [reset, setReset] = useState(false)
 
   useEffect(() => listenProduits(setProduits), [])
 
@@ -16,6 +17,16 @@ export default function Menu() {
     setNom('')
     setCategorie('')
     setPrix('')
+  }
+
+  async function handleReset() {
+    const ok = window.confirm(
+      "Remettre tout le stock à 0 et effacer tout l'historique (livraisons, retraits, inventaires, ventes) ? Les produits eux-mêmes (nom, prix, catégorie) sont conservés. Cette action est irréversible.",
+    )
+    if (!ok) return
+    setReset(true)
+    await reinitialiserTout()
+    setReset(false)
   }
 
   return (
@@ -79,6 +90,17 @@ export default function Menu() {
         </label>
         <button type="submit" className="primary-btn">Ajouter au catalogue</button>
       </form>
+
+      <div className="danger-zone">
+        <h2>Zone de test</h2>
+        <p className="page-hint">
+          Après tes essais, remets tout à zéro avant de démarrer pour de vrai :
+          stocks vidés, historique effacé. Les produits restent.
+        </p>
+        <button type="button" className="danger-btn" onClick={handleReset} disabled={reset}>
+          {reset ? 'Réinitialisation…' : 'Réinitialiser tout (stock + historique)'}
+        </button>
+      </div>
     </div>
   )
 }
