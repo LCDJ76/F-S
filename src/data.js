@@ -10,6 +10,7 @@ import {
   limit,
   getDocs,
   runTransaction,
+  writeBatch,
   serverTimestamp,
   Timestamp,
 } from 'firebase/firestore'
@@ -19,15 +20,20 @@ const produitsCol = collection(db, 'produits')
 const mouvementsCol = collection(db, 'mouvements')
 const livraisonsCol = collection(db, 'livraisons')
 
+// Un produit a maintenant plusieurs "lots" : [{ dlc, quantite }, ...]
+// stockActuel reste sur le produit comme total pré-calculé, pratique pour
+// l'affichage rapide (tableau de bord, etc.) sans recalculer à chaque fois.
+
+function sommeLots(lots) {
+  return (lots || []).reduce((s, l) => s + l.quantite, 0)
+}
+
 // ---------- PRODUITS ----------
 
-// NB : on ne combine jamais where() + orderBy() sur des champs différents ici,
-// ça demanderait un index composite à créer manuellement dans Firestore.
-// On trie côté client à la place — largement suffisant pour ce volume.
 export function listenProduits(callback, { onlyActive = false } = {}) {
   const q = onlyActive ? query(produitsCol, where('actif', '==', true)) : produitsCol
   return onSnapshot(q, (snap) => {
-    const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+    const list = snap.docs.map((d) => ({ id: d.id, ...d.data(), lots: d.data().lots || [] }))
     list.sort((a, b) => a.nom.localeCompare(b.nom))
     callback(list)
   })
@@ -40,7 +46,7 @@ export async function ajouterProduit(nom, categorie, prix) {
     prix: prix ? Number(prix) : 0,
     actif: true,
     stockActuel: 0,
-    dlcActuelle: null,
+    lots: [],
     createdAt: serverTimestamp(),
   })
 }
@@ -70,30 +76,35 @@ async function logMouvement({ produitId, produitNom, type, quantite, dlc = null,
   })
 }
 
+// Ajoute une quantité à un lot DLC précis du produit (crée le lot s'il n'existe pas).
 async function appliquerLivraisonLigne({ produit, quantite, dlc, utilisateur, livraisonId }) {
   const ref = doc(db, 'produits', produit.id)
+  const dlcKey = dlc || null
   await runTransaction(db, async (tx) => {
     const snap = await tx.get(ref)
-    const actuel = snap.data().stockActuel || 0
-    tx.update(ref, {
-      stockActuel: actuel + Number(quantite),
-      dlcActuelle: dlc || snap.data().dlcActuelle || null,
-    })
+    const lots = [...(snap.data().lots || [])]
+    const idx = lots.findIndex((l) => l.dlc === dlcKey)
+    if (idx >= 0) {
+      lots[idx] = { ...lots[idx], quantite: lots[idx].quantite + Number(quantite) }
+    } else {
+      lots.push({ dlc: dlcKey, quantite: Number(quantite) })
+    }
+    tx.update(ref, { lots, stockActuel: sommeLots(lots) })
   })
   await logMouvement({
     produitId: produit.id,
     produitNom: produit.nom,
     type: 'livraison',
     quantite: Number(quantite),
-    dlc: dlc || null,
+    dlc: dlcKey,
     utilisateur,
     livraisonId,
   })
 }
 
-// Valide une livraison complète (plusieurs produits d'un coup) : met à jour
-// chaque stock, journalise chaque ligne, et crée une fiche "livraisons"
-// groupée avec date/heure pour l'affichage au tableau de bord.
+// Valide une livraison complète (plusieurs produits, chacun avec sa DLC) :
+// met à jour les lots de chaque produit, journalise, et crée une fiche
+// "livraisons" groupée avec date/heure pour l'affichage au tableau de bord.
 export async function validerLivraison({ lignes, utilisateur }) {
   const livraisonRef = await addDoc(livraisonsCol, {
     dateHeure: serverTimestamp(),
@@ -119,57 +130,80 @@ export async function validerLivraison({ lignes, utilisateur }) {
   return livraisonRef.id
 }
 
-// Retrait : enlève du stock à tout moment, avec motif. (Théo)
-export async function retirerProduit({ produit, quantite, motif, commentaire, utilisateur }) {
+// Retrait sur un lot DLC précis (produit périmé/abîmé sur CE lot-là).
+export async function retirerProduit({ produit, dlc, quantite, motif, commentaire, utilisateur }) {
   const ref = doc(db, 'produits', produit.id)
+  const dlcKey = dlc || null
   await runTransaction(db, async (tx) => {
     const snap = await tx.get(ref)
-    const actuel = snap.data().stockActuel || 0
-    tx.update(ref, { stockActuel: Math.max(0, actuel - Number(quantite)) })
+    const lots = [...(snap.data().lots || [])]
+    const idx = lots.findIndex((l) => l.dlc === dlcKey)
+    if (idx >= 0) {
+      const nouvelleQte = Math.max(0, lots[idx].quantite - Number(quantite))
+      if (nouvelleQte === 0) lots.splice(idx, 1)
+      else lots[idx] = { ...lots[idx], quantite: nouvelleQte }
+    }
+    tx.update(ref, { lots, stockActuel: sommeLots(lots) })
   })
   await logMouvement({
     produitId: produit.id,
     produitNom: produit.nom,
     type: 'retrait',
     quantite: -Number(quantite),
+    dlc: dlcKey,
     motif,
     commentaire,
     utilisateur,
   })
 }
 
-// Inventaire du soir : Nicolas indique ce qu'il reste. L'app déduit le vendu,
-// journalise les deux mouvements, et fixe le stock au chiffre réel constaté.
-export async function enregistrerInventaire({ produit, stockRestant, dlc, utilisateur }) {
+// Inventaire du soir : Nicolas indique ce qu'il reste, lot par lot (DLC par DLC).
+// entrees = [{ dlc, quantiteRestante }]
+export async function enregistrerInventaireLots({ produit, entrees, utilisateur }) {
   const ref = doc(db, 'produits', produit.id)
-  let stockAvant = 0
+  const resultats = []
+
   await runTransaction(db, async (tx) => {
     const snap = await tx.get(ref)
-    stockAvant = snap.data().stockActuel || 0
-    tx.update(ref, {
-      stockActuel: Number(stockRestant),
-      dlcActuelle: dlc || snap.data().dlcActuelle || null,
-    })
+    const lots = [...(snap.data().lots || [])]
+
+    for (const e of entrees) {
+      const idx = lots.findIndex((l) => l.dlc === e.dlc)
+      const avant = idx >= 0 ? lots[idx].quantite : 0
+      const restant = Number(e.quantiteRestante)
+      resultats.push({ dlc: e.dlc, avant, restant, vendu: avant - restant })
+
+      if (restant <= 0) {
+        if (idx >= 0) lots.splice(idx, 1)
+      } else if (idx >= 0) {
+        lots[idx] = { ...lots[idx], quantite: restant }
+      } else {
+        lots.push({ dlc: e.dlc, quantite: restant })
+      }
+    }
+
+    tx.update(ref, { lots, stockActuel: sommeLots(lots) })
   })
 
-  await logMouvement({
-    produitId: produit.id,
-    produitNom: produit.nom,
-    type: 'inventaire',
-    quantite: Number(stockRestant),
-    dlc: dlc || null,
-    utilisateur,
-  })
-
-  const vendu = stockAvant - Number(stockRestant)
-  if (vendu > 0) {
+  for (const r of resultats) {
     await logMouvement({
       produitId: produit.id,
       produitNom: produit.nom,
-      type: 'vente',
-      quantite: vendu,
-      utilisateur: 'système',
+      type: 'inventaire',
+      quantite: r.restant,
+      dlc: r.dlc,
+      utilisateur,
     })
+    if (r.vendu > 0) {
+      await logMouvement({
+        produitId: produit.id,
+        produitNom: produit.nom,
+        type: 'vente',
+        quantite: r.vendu,
+        dlc: r.dlc,
+        utilisateur: 'système',
+      })
+    }
   }
 }
 
@@ -198,4 +232,27 @@ export async function getMouvementsEntre(dateDebut, dateFin) {
   )
   const snap = await getDocs(q)
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+}
+
+// ---------- REMISE À ZÉRO (après tests) ----------
+
+// Remet tous les produits à 0 (lots vidés) et efface tout l'historique
+// (mouvements + livraisons). Les produits eux-mêmes (nom, catégorie, prix,
+// actif) sont conservés. Irréversible — à utiliser une fois avant le vrai
+// démarrage, pas en usage courant.
+export async function reinitialiserTout() {
+  const [produitsSnap, mouvementsSnap, livraisonsSnap] = await Promise.all([
+    getDocs(produitsCol),
+    getDocs(mouvementsCol),
+    getDocs(livraisonsCol),
+  ])
+
+  const batch = writeBatch(db)
+  produitsSnap.docs.forEach((d) => {
+    batch.update(doc(db, 'produits', d.id), { lots: [], stockActuel: 0 })
+  })
+  mouvementsSnap.docs.forEach((d) => batch.delete(doc(db, 'mouvements', d.id)))
+  livraisonsSnap.docs.forEach((d) => batch.delete(doc(db, 'livraisons', d.id)))
+
+  await batch.commit()
 }
