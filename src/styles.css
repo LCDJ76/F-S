@@ -180,9 +180,33 @@ body {
 
 .status-msg { color: var(--green); font-weight: 500; margin-bottom: 12px; }
 
+.danger-zone {
+  border: 1px solid #e8c9c6;
+  background: #fdf5f4;
+  border-radius: 10px;
+  padding: 18px 20px;
+  max-width: 420px;
+  margin-top: 12px;
+}
+.danger-zone h2 { color: var(--danger); font-size: 1rem; margin-top: 0; }
+.danger-btn {
+  background: white;
+  color: var(--danger);
+  border: 1px solid var(--danger);
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+.danger-btn:disabled { opacity: 0.6; cursor: default; }
+
 /* ---- Vendeur ---- */
 .vendeur-page { max-width: 480px; }
-.vendeur-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 24px; }
+.vendeur-list { display: flex; flex-direction: column; gap: 18px; margin-bottom: 24px; }
+.vendeur-produit-block { display: flex; flex-direction: column; gap: 6px; }
+.vendeur-produit-nom { color: var(--green); font-size: 1rem; }
 .vendeur-row {
   display: flex;
   align-items: center;
@@ -193,7 +217,8 @@ body {
   padding: 14px 16px;
 }
 .vendeur-row-info { display: flex; flex-direction: column; gap: 2px; }
-.vendeur-dlc { color: var(--muted); font-size: 0.82rem; }
+.vendeur-dlc { color: var(--text); font-size: 0.88rem; font-weight: 500; }
+.vendeur-dlc-livre { color: var(--muted); font-size: 0.78rem; }
 .vendeur-input {
   width: 70px;
   padding: 10px;
