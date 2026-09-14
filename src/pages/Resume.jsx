@@ -26,9 +26,14 @@ export default function Resume() {
 
   useEffect(() => listenProduits(setProduits), [])
 
-  async function charger() {
+  useEffect(() => {
+    if (produits.length > 0 && lignes === null) charger(debut)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [produits])
+
+  async function charger(dateDebutStr) {
     setLoading(true)
-    const dateDebut = new Date(debut + 'T00:00:00')
+    const dateDebut = new Date(dateDebutStr + 'T00:00:00')
     const dateFin = new Date(dateDebut)
     dateFin.setDate(dateFin.getDate() + 6)
     dateFin.setHours(23, 59, 59, 999)
@@ -58,6 +63,20 @@ export default function Resume() {
     setLoading(false)
   }
 
+  function changerSemaine(delta) {
+    const d = new Date(debut + 'T00:00:00')
+    d.setDate(d.getDate() + delta * 7)
+    const nouvelle = toInputDate(d)
+    setDebut(nouvelle)
+    charger(nouvelle)
+  }
+
+  function finDeSemaine() {
+    const d = new Date(debut + 'T00:00:00')
+    d.setDate(d.getDate() + 6)
+    return d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'long' })
+  }
+
   const totalVendu = lignes ? lignes.reduce((s, l) => s + l.vendu, 0) : 0
   const totalCA = lignes ? lignes.reduce((s, l) => s + l.ca, 0) : 0
   const meilleur = lignes && lignes.length > 0 ? lignes[0] : null
@@ -65,16 +84,21 @@ export default function Resume() {
   return (
     <div className="page">
       <h1>Résumé de la semaine</h1>
-      <p className="page-hint">Semaine du lundi choisi ci-dessous, sur 7 jours.</p>
+      <p className="page-hint">
+        Semaine du <strong>{new Date(debut + 'T00:00:00').toLocaleDateString('fr-FR', { day: '2-digit', month: 'long' })}</strong> au{' '}
+        <strong>{finDeSemaine()}</strong> (lundi → dimanche, calculé automatiquement).
+      </p>
 
       <div className="filters-row">
+        <button className="primary-btn" onClick={() => changerSemaine(-1)}>← Semaine précédente</button>
         <label>
           Semaine du
           <input type="date" value={debut} onChange={(e) => setDebut(e.target.value)} />
         </label>
-        <button className="primary-btn" onClick={charger} disabled={loading}>
+        <button className="primary-btn" onClick={() => charger(debut)} disabled={loading}>
           {loading ? 'Calcul…' : 'Afficher'}
         </button>
+        <button className="primary-btn" onClick={() => changerSemaine(1)}>Semaine suivante →</button>
       </div>
 
       {lignes && (
